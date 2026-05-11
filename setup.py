@@ -68,7 +68,7 @@ setup(
         "pydantic-settings>=2.1.0",
         "python-dotenv>=1.0.0",
         "pandas>=2.1.0",
-        "openpyxl>=3.11.0",
+        "openpyxl>=3.1.0",
         "spacy>=3.7.0",
         "cryptography>=41.0.0",
         "pyjwt>=2.8.0",
