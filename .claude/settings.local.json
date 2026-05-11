@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(black src/ tests/)"
+      "Bash(black src/ tests/)",
+      "Bash(FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --msg-filter ' *)"
     ]
   }
 }
