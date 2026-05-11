@@ -169,7 +169,7 @@ class AuditLogger:
         self._append_event(event)
 
     def log_approval(
-        self, user: str, resource: str, approved_by: str, reason: str = None
+        self, user: str, resource: str, approved_by: str, reason: Optional[str] = None
     ) -> None:
         """Log approval of previously escalated request."""
         event = AuditEvent(
@@ -183,7 +183,7 @@ class AuditLogger:
         self._append_event(event)
 
     def log_denial(
-        self, user: str, resource: str, denied_by: str, reason: str = None
+        self, user: str, resource: str, denied_by: str, reason: Optional[str] = None
     ) -> None:
         """Log denial of previously escalated request."""
         event = AuditEvent(
@@ -231,7 +231,7 @@ class AuditLogger:
 
     def get_summary(self) -> Dict[str, Any]:
         """Get summary statistics."""
-        summary = {
+        summary: Dict[str, Any] = {
             "total_events": len(self.events),
             "by_type": {},
             "by_decision": {},

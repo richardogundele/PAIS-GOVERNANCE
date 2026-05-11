@@ -111,10 +111,10 @@ async def enforce_policy(request: PolicyRequest) -> PolicyResponse:
         decision = gateway.enforce_policy(request.dict(exclude_none=True))
 
         return PolicyResponse(
-            action=decision.get("action"),
-            decision=decision.get("decision"),
-            reason=decision.get("reason"),
-            timestamp=decision.get("timestamp"),
+            action=decision.get("action", ""),
+            decision=decision.get("decision", ""),
+            reason=decision.get("reason", ""),
+            timestamp=decision.get("timestamp", ""),
         )
 
     except Exception as e:
@@ -142,7 +142,7 @@ async def redact_file(file: UploadFile = File(...)):
 
         with NamedTemporaryFile(
             delete=False,
-            suffix=Path(file.filename).suffix,
+            suffix=Path(file.filename or "").suffix,
         ) as tmp:
             contents = await file.read()
             tmp.write(contents)

@@ -100,7 +100,7 @@ class PIIDetector:
     def is_sensitive(
         self,
         text: str,
-        sensitive_keywords: List[str] = None,
+        sensitive_keywords: Optional[List[str]] = None,
     ) -> bool:
         """
         Check if text contains sensitive information.
@@ -220,6 +220,7 @@ class SpreadsheetRedactor:
 
         # Select redaction strategy
         strategy_name = config.get("redaction_strategy", "blank").lower()
+        self.strategy: RedactionStrategy
         if strategy_name == "token":
             self.strategy = TokenRedaction()
         elif strategy_name == "hash":
@@ -240,17 +241,17 @@ class SpreadsheetRedactor:
             DataFrame or None if load fails
         """
         try:
-            file_path = Path(file_path)
+            path = Path(file_path)
 
-            if file_path.suffix.lower() == ".csv":
-                df = pd.read_csv(file_path)
-            elif file_path.suffix.lower() in [".xlsx", ".xls"]:
-                df = pd.read_excel(file_path)
+            if path.suffix.lower() == ".csv":
+                df = pd.read_csv(path)
+            elif path.suffix.lower() in [".xlsx", ".xls"]:
+                df = pd.read_excel(path)
             else:
-                logger.error(f"Unsupported file format: {file_path.suffix}")
+                logger.error(f"Unsupported file format: {path.suffix}")
                 return None
 
-            logger.info(f"Loaded {len(df)} rows from {file_path}")
+            logger.info(f"Loaded {len(df)} rows from {path}")
             return df
 
         except Exception as e:
@@ -319,14 +320,14 @@ class SpreadsheetRedactor:
             True if successful
         """
         try:
-            output_path = Path(output_path)
+            out = Path(output_path)
 
-            if output_path.suffix.lower() == ".csv":
-                df.to_csv(output_path, index=False)
+            if out.suffix.lower() == ".csv":
+                df.to_csv(out, index=False)
             else:
-                df.to_excel(output_path, index=False)
+                df.to_excel(out, index=False)
 
-            logger.info(f"Saved redacted file: {output_path}")
+            logger.info(f"Saved redacted file: {out}")
             return True
 
         except Exception as e:

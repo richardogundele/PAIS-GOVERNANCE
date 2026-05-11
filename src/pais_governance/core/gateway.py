@@ -167,7 +167,7 @@ class PolicyGateway:
         data = request.get("data")
 
         if not data:
-            return data
+            return {}
 
         # If data is a DataFrame or dict-like
         if hasattr(data, "copy"):
