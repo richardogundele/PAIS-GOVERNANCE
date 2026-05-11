@@ -174,9 +174,7 @@ class PolicyGateway:
             data_copy = data.copy()
             for col in decision.sensitive_columns:
                 if col in data_copy.columns:
-                    data_copy[col] = data_copy[col].apply(
-                        self.redactor.strategy.redact
-                    )
+                    data_copy[col] = data_copy[col].apply(self.redactor.strategy.redact)
             return data_copy
 
         # If data is a dict
@@ -184,9 +182,7 @@ class PolicyGateway:
             data_copy = data.copy()
             for col in decision.sensitive_columns:
                 if col in data_copy:
-                    data_copy[col] = self.redactor.strategy.redact(
-                        data_copy[col]
-                    )
+                    data_copy[col] = self.redactor.strategy.redact(data_copy[col])
             return data_copy
 
         # Otherwise return as-is

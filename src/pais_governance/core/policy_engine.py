@@ -117,9 +117,7 @@ class PolicyEngine:
                     action=PolicyAction[policy_dict["action"].upper()],
                     sensitive_columns=policy_dict.get("sensitive_columns", []),
                     condition=policy_dict.get("condition"),
-                    approval_required_from=policy_dict.get(
-                        "approval_required_from"
-                    ),
+                    approval_required_from=policy_dict.get("approval_required_from"),
                     escalation_timeout_hours=policy_dict.get(
                         "escalation_timeout_hours", 24
                     ),

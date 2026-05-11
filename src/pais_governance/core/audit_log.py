@@ -240,9 +240,7 @@ class AuditLogger:
         for event in self.events:
             # By type
             event_type = event.event_type
-            summary["by_type"][event_type] = (
-                summary["by_type"].get(event_type, 0) + 1
-            )
+            summary["by_type"][event_type] = summary["by_type"].get(event_type, 0) + 1
 
             # By decision
             if event.decision:
