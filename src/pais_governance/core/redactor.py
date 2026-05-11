@@ -294,6 +294,7 @@ class SpreadsheetRedactor:
         
         for col in sensitive_cols:
             if col in df_redacted.columns:
+                df_redacted[col] = df_redacted[col].astype(object)
                 for idx, value in enumerate(df_redacted[col]):
                     if pd.notna(value):  # Skip NaN values
                         df_redacted.at[idx, col] = self.strategy.redact(value)
@@ -363,7 +364,8 @@ class SpreadsheetRedactor:
                 "status": "SAFE",
                 "message": "No sensitive columns detected",
                 "file": file_path,
-                "rows": len(df)
+                "rows": len(df),
+                "total_cells_redacted": 0
             }
         
         # Redact
