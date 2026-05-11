@@ -108,7 +108,11 @@ class PolicyGateway:
                 "original_data": request.get("data"),
                 "safe_data": redacted_data,
                 "sensitive_columns": decision.sensitive_columns,
-                "message": f"Sensitive data detected in {decision.sensitive_columns}. Redacted version provided.",
+                "message": (
+                    "Sensitive data detected in "
+                    f"{decision.sensitive_columns}. "
+                    "Redacted version provided."
+                ),
                 "timestamp": datetime.now().isoformat(),
             }
 
@@ -122,7 +126,10 @@ class PolicyGateway:
                 "reason": decision.reason,
                 "approval_required_from": decision.approval_required_from,
                 "escalation_timeout_hours": decision.escalation_timeout_hours,
-                "message": f"This request requires approval from: {', '.join(decision.approval_required_from or [])}",
+                "message": (
+                    "This request requires approval from: "
+                    f"{', '.join(decision.approval_required_from or [])}"
+                ),
                 "timestamp": datetime.now().isoformat(),
             }
 
@@ -167,7 +174,9 @@ class PolicyGateway:
             data_copy = data.copy()
             for col in decision.sensitive_columns:
                 if col in data_copy.columns:
-                    data_copy[col] = data_copy[col].apply(self.redactor.strategy.redact)
+                    data_copy[col] = data_copy[col].apply(
+                        self.redactor.strategy.redact
+                    )
             return data_copy
 
         # If data is a dict
@@ -175,7 +184,9 @@ class PolicyGateway:
             data_copy = data.copy()
             for col in decision.sensitive_columns:
                 if col in data_copy:
-                    data_copy[col] = self.redactor.strategy.redact(data_copy[col])
+                    data_copy[col] = self.redactor.strategy.redact(
+                        data_copy[col]
+                    )
             return data_copy
 
         # Otherwise return as-is

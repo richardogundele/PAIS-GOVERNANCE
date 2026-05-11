@@ -31,7 +31,8 @@ class PolicyRule:
     """Single policy rule with conditions and actions."""
 
     name: str
-    trigger: str  # Event type: file_shared_externally, data_uploaded_to_ai, etc.
+    # Event type: file_shared_externally, data_uploaded_to_ai, etc.
+    trigger: str
     action: PolicyAction
     sensitive_columns: List[str] = field(default_factory=list)
     condition: Optional[Dict[str, Any]] = None
@@ -116,7 +117,9 @@ class PolicyEngine:
                     action=PolicyAction[policy_dict["action"].upper()],
                     sensitive_columns=policy_dict.get("sensitive_columns", []),
                     condition=policy_dict.get("condition"),
-                    approval_required_from=policy_dict.get("approval_required_from"),
+                    approval_required_from=policy_dict.get(
+                        "approval_required_from"
+                    ),
                     escalation_timeout_hours=policy_dict.get(
                         "escalation_timeout_hours", 24
                     ),

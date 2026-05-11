@@ -30,7 +30,8 @@ class PIIDetector:
             self.nlp = spacy.load("en_core_web_sm")
         except OSError:
             logger.warning(
-                "spaCy model not found. Install with: python -m spacy download en_core_web_sm"
+                "spaCy model not found. Install with: "
+                "python -m spacy download en_core_web_sm"
             )
             self.nlp = None
 
@@ -77,7 +78,9 @@ class PIIDetector:
             findings["email"] = emails
 
         # UK phone pattern
-        phone_pattern = r"\b(?:\+?44|0)(?:\d{4}|\d{3}|\d{2})?\s?\d{3,4}\s?\d{3,4}\b"
+        phone_pattern = (
+            r"\b(?:\+?44|0)(?:\d{4}|\d{3}|\d{2})?\s?\d{3,4}\s?\d{3,4}\b"
+        )
         phones = re.findall(phone_pattern, text)
         if phones:
             findings["phone"] = phones
@@ -89,14 +92,20 @@ class PIIDetector:
             findings["ssn"] = ssns
 
         # Date of birth pattern (DD/MM/YYYY or DD-MM-YYYY)
-        dob_pattern = r"\b(0[1-9]|[12][0-9]|3[01])[/-](0[1-9]|1[012])[/-](19|20)\d{2}\b"
+        dob_pattern = (
+            r"\b(0[1-9]|[12][0-9]|3[01])[/-](0[1-9]|1[012])[/-](19|20)\d{2}\b"
+        )
         dobs = re.findall(dob_pattern, text)
         if dobs:
             findings["dob"] = [f"{m[0]}/{m[1]}/{m[2]}" for m in dobs]
 
         return findings
 
-    def is_sensitive(self, text: str, sensitive_keywords: List[str] = None) -> bool:
+    def is_sensitive(
+        self,
+        text: str,
+        sensitive_keywords: List[str] = None,
+    ) -> bool:
         """
         Check if text contains sensitive information.
 
@@ -154,7 +163,9 @@ class TokenRedaction(RedactionStrategy):
     def redact(self, value: Any) -> str:
         """Replace with token."""
         value_str = str(value)
-        hashed = hashlib.sha256(f"{value_str}{self.salt}".encode()).hexdigest()[:12]
+        hashed = hashlib.sha256(
+            f"{value_str}{self.salt}".encode()
+        ).hexdigest()[:12]
         return f"TOKEN_{hashed}"
 
 
@@ -183,7 +194,7 @@ class PartialRedaction(RedactionStrategy):
             return "*" * len(value_str)
 
         first = value_str[: self.show_first]
-        last = value_str[-self.show_last :]
+        last = value_str[-self.show_last:]
         middle = "*" * (len(value_str) - self.show_first - self.show_last)
         return f"{first}{middle}{last}"
 
@@ -374,9 +385,11 @@ class SpreadsheetRedactor:
         # Save
         if output_path is None:
             file_path_obj = Path(file_path)
+            redacted_name = (
+                f"{file_path_obj.stem}_REDACTED{file_path_obj.suffix}"
+            )
             output_path = str(
-                file_path_obj.parent
-                / f"{file_path_obj.stem}_REDACTED{file_path_obj.suffix}"
+                file_path_obj.parent / redacted_name
             )
 
         success = self.save_spreadsheet(df_redacted, output_path)
@@ -391,7 +404,10 @@ class SpreadsheetRedactor:
         total_redacted = sum(stats.values())
         return {
             "status": "REDACTED",
-            "message": f"Redacted {total_redacted} cells in {len(sensitive_columns)} columns",
+            "message": (
+                f"Redacted {total_redacted} cells in "
+                f"{len(sensitive_columns)} columns"
+            ),
             "original_file": file_path,
             "redacted_file": output_path,
             "sensitive_columns": sensitive_columns,

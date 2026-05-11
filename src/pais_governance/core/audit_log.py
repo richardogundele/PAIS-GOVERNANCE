@@ -135,7 +135,10 @@ class AuditLogger:
             action=request.get("trigger"),
             resource=request.get("file") or request.get("resource"),
             decision=decision.rule_name,
-            reason=f"Requires approval from: {', '.join(decision.approval_required_from or [])}",
+            reason=(
+                "Requires approval from: "
+                f"{', '.join(decision.approval_required_from or [])}"
+            ),
             sensitive_data_detected=decision.sensitive_columns,
         )
         self._append_event(event)
@@ -228,12 +231,18 @@ class AuditLogger:
 
     def get_summary(self) -> Dict[str, Any]:
         """Get summary statistics."""
-        summary = {"total_events": len(self.events), "by_type": {}, "by_decision": {}}
+        summary = {
+            "total_events": len(self.events),
+            "by_type": {},
+            "by_decision": {},
+        }
 
         for event in self.events:
             # By type
             event_type = event.event_type
-            summary["by_type"][event_type] = summary["by_type"].get(event_type, 0) + 1
+            summary["by_type"][event_type] = (
+                summary["by_type"].get(event_type, 0) + 1
+            )
 
             # By decision
             if event.decision:
@@ -269,7 +278,11 @@ class AuditLogger:
         """Export audit log as JSON."""
         try:
             with open(output_path, "w") as f:
-                json.dump([event.to_dict() for event in self.events], f, indent=2)
+                json.dump(
+                    [event.to_dict() for event in self.events],
+                    f,
+                    indent=2,
+                )
             logger.info(f"Exported audit log to {output_path}")
             return True
         except Exception as e:
@@ -284,7 +297,11 @@ def main():
     # Log some events
     logger_instance.log_allowed(
         {"user": "staff@example.com", "file": "grades.xlsx"},
-        type("Decision", (), {"rule_name": "default", "reason": "No policy matched"})(),
+        type(
+            "Decision",
+            (),
+            {"rule_name": "default", "reason": "No policy matched"},
+        )(),
     )
 
     # Query

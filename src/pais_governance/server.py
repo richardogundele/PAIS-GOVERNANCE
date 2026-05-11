@@ -19,7 +19,8 @@ from pais_governance.core.policy_engine import PolicyAction
 
 # Logging
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -139,7 +140,10 @@ async def redact_file(file: UploadFile = File(...)):
         # Save temp file
         from tempfile import NamedTemporaryFile
 
-        with NamedTemporaryFile(delete=False, suffix=Path(file.filename).suffix) as tmp:
+        with NamedTemporaryFile(
+            delete=False,
+            suffix=Path(file.filename).suffix,
+        ) as tmp:
             contents = await file.read()
             tmp.write(contents)
             tmp.flush()
@@ -178,7 +182,9 @@ async def handle_file_share(
 
 @app.get("/api/v1/audit")
 async def get_audit_log(
-    event_type: Optional[str] = None, user: Optional[str] = None, limit: int = 100
+    event_type: Optional[str] = None,
+    user: Optional[str] = None,
+    limit: int = 100,
 ) -> Dict[str, Any]:
     """Get audit log entries."""
     if not gateway:
@@ -237,7 +243,10 @@ async def get_config() -> Dict[str, Any]:
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle unhandled exceptions."""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error"},
+    )
 
 
 if __name__ == "__main__":

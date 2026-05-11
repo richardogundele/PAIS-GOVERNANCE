@@ -143,7 +143,9 @@ class TestSpreadsheetRedactor:
         """Should handle files with no sensitive data."""
         redactor = SpreadsheetRedactor(sample_config)
 
-        df = pd.DataFrame({"Date": ["2025-01-01", "2025-01-02"], "Count": [10, 20]})
+        df = pd.DataFrame(
+            {"Date": ["2025-01-01", "2025-01-02"], "Count": [10, 20]}
+        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = Path(tmpdir) / "safe.xlsx"
