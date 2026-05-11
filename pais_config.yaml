@@ -1,0 +1,145 @@
+# PAIS-Governance Configuration
+# Customize this file for your organization
+
+organization:
+  name: "University of Manchester"
+  sector: "higher_education"
+  environment: "development"
+
+sensitive_data:
+  # Columns to automatically detect and redact
+  columns:
+    - "Student ID"
+    - "ID Number"
+    - "Matric"
+    - "Grade"
+    - "Mark"
+    - "Score"
+    - "Feedback"
+    - "Comments"
+    - "Notes"
+    - "Email"
+    - "Name"
+    - "First Name"
+    - "Last Name"
+    - "DOB"
+    - "Date of Birth"
+    - "Salary"
+    - "SSN"
+  
+  # Pattern detection
+  patterns:
+    email: true
+    phone: true
+    ssn: true
+    dob: true
+
+# Redaction strategy
+redaction:
+  # Options: "blank" (default), "token", "hash", "partial"
+  strategy: "blank"
+  
+  # Preserve spreadsheet structure when redacting
+  preserve_structure: false
+  
+  # For partial redaction
+  show_first: 2
+  show_last: 2
+
+# Policy rules
+policies:
+  # Protect student grades when shared externally
+  - name: "student_grades_protection"
+    trigger: "file_shared_externally"
+    action: "WARN_AND_REDACT"
+    sensitive_columns:
+      - "Grade"
+      - "Mark"
+      - "Score"
+      - "Feedback"
+      - "Student ID"
+    condition:
+      file_type: ["xlsx", "csv"]
+  
+  # Require approval for research data uploads
+  - name: "research_data_protection"
+    trigger: "data_uploaded_to_ai"
+    action: "REQUIRE_HUMAN_REVIEW"
+    sensitive_columns:
+      - "Name"
+      - "Email"
+      - "Institution"
+      - "DOB"
+    approval_required_from:
+      - "data-protection@manchester.ac.uk"
+      - "research@manchester.ac.uk"
+    escalation_timeout_hours: 24
+  
+  # Allow internal sharing without redaction
+  - name: "allow_internal_sharing"
+    trigger: "file_shared_internally"
+    action: "ALLOW"
+
+# Notifications
+notification:
+  # Email for DPO alerts
+  email: "data-protection@manchester.ac.uk"
+  
+  # Teams webhook (optional)
+  teams_webhook: ${TEAMS_WEBHOOK_URL}
+  
+  # Alert on high-risk events
+  alert_on: ["BLOCKED", "ESCALATED"]
+
+# Audit logging
+audit:
+  # Log file location
+  log_file: "logs/audit.log"
+  
+  # Keep logs for N days
+  retention_days: 365
+  
+  # Database connection (optional, for centralized audit)
+  # database: "postgresql://user:pass@localhost/pais_governance"
+
+# Teams integration (optional)
+teams:
+  # Graph API integration
+  tenant_id: ${AZURE_TENANT_ID}
+  client_id: ${AZURE_CLIENT_ID}
+  client_secret: ${AZURE_CLIENT_SECRET}
+  
+  # Webhook endpoint
+  webhook_url: ${TEAMS_WEBHOOK_URL}
+
+# Logging
+logging:
+  level: "INFO"
+  format: "json"  # or "text"
+  
+  # Log to file
+  file: "logs/pais.log"
+  
+  # Log to stdout
+  console: true
+
+# API Settings
+api:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  cors_origins: ["http://localhost:3000", "http://localhost:8080"]
+
+# Security
+security:
+  # Encryption key (use environment variable in production)
+  encryption_key: ${ENCRYPTION_KEY}
+  
+  # HTTPS required in production
+  require_https: false
+  
+  # Rate limiting
+  rate_limit_per_minute: 60
+  
+  # API key authentication (optional)
+  require_api_key: false
