@@ -164,3 +164,6 @@ temp/
 *.cert
 secrets/
 credentials.json
+
+# Local dev/test dependency installs (contributors build their own)
+.codex_deps_test/
