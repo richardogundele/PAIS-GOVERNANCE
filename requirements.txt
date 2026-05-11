@@ -16,7 +16,7 @@ transformers==4.35.2
 
 # Encryption & security
 cryptography==41.0.7
-pyjwt==2.8.1
+pyjwt==2.8.0
 
 # Azure integration
 azure-storage-blob==12.19.0
