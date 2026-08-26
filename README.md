@@ -1,367 +1,162 @@
-# PAIS-Governance
+# PAIS Agent Reliability Gateway
 
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)]()
+[![CI](https://github.com/richardogundele/PAIS-GOVERNANCE/actions/workflows/ci.yml/badge.svg)](https://github.com/richardogundele/PAIS-GOVERNANCE/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue)]()
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue)]()
+[![Status: Alpha](https://img.shields.io/badge/status-alpha-orange.svg)](ROADMAP.md)
 
-**Enterprise-grade policy-as-code AI governance for higher education and public sector.**
+**An open-source policy boundary for AI-agent tool calls.**
 
-PAIS-Governance automatically enforces data protection policies when sensitive information interacts with AI systems. Stop accidental exposure of student data, research files, and confidential documents.
+PAIS evaluates a proposed agent action *before* it reaches a tool. It returns one of five explicit outcomes: `ALLOW`, `LOG_FOR_AUDIT`, `WARN_AND_REDACT`, `REQUIRE_HUMAN_REVIEW` or `BLOCK_ACTION`. Every decision is appended to a hash-linked audit trail so later modification can be detected.
 
-## The Problem
+PAIS does not execute tools and does not pretend to make an agent safe by itself. The host application must call PAIS before execution and honour its decision.
 
-```
-Scenario 1: Student data exposure
-  ├─ Staff analyse grades in Teams
-  ├─ Someone shares the file with an external collaborator
-  └─ Student names + grades are now exposed (GDPR/FERPA violation)
+## Why this exists
 
-Scenario 2: Research data leakage
-  ├─ Researcher uploads survey data (with names) to ChatGPT
-  ├─ ChatGPT learns patterns from real student data
-  └─ Data privacy breach + regulatory investigation
+Agent frameworks make it easy to give models access to databases, shells, communication systems and production APIs. The difficult operational questions remain:
 
-Scenario 3: Confidential document sharing
-  ├─ HR uploads staff salary data to cloud storage
-  ├─ Link is accidentally shared publicly
-  └─ Compliance incident, reputational damage
-```
+- Which tools may this agent call in this environment?
+- Which actions require a human before they create an external side effect?
+- What happens when a new action has no matching policy?
+- Can an investigator verify which policy produced a decision?
+- Can confidential fields be removed without logging their values?
 
-## The Solution
+PAIS provides a small, inspectable reliability boundary for those questions.
 
-**PAIS-Governance is a policy gateway that sits between your systems and AI tools.**
+## Implemented in v0.1
 
-```
-User action (share file, upload to AI)
-    ↓
-PAIS-Governance policy engine
-    ├─ Identify sensitive data
-    ├─ Apply configured policies
-    └─ Decide: ALLOW, WARN_AND_REDACT, REQUIRE_APPROVAL, BLOCK
-    ↓
-Safe outcome (redacted file, notification, escalation)
-```
+- YAML policy-as-code with exact, membership, range, containment and existence conditions
+- Deny-overrides precedence when multiple rules match
+- Fail-safe default for unknown actions
+- Human-review queue metadata for escalated decisions
+- Field-level redaction for mapping payloads
+- Append-only JSONL audit events linked by SHA-256 hashes
+- Audit-chain integrity verification
+- FastAPI decision, audit and review-status endpoints
+- Docker build and Python 3.10/3.12 CI
 
-### Key Features
+## Not implemented yet
 
-- ✅ **Automatic PII Detection** — Names, IDs, emails, grades, financial data
-- ✅ **Real-time Policy Enforcement** — Intercept before data leaves the boundary
-- ✅ **Multiple Redaction Strategies** — Blank, token, hash, partial masking
-- ✅ **Audit Trail** — Every decision logged, compliant with GDPR/FERPA
-- ✅ **Human Approval Workflows** — Escalate sensitive cases to DPO/compliance
-- ✅ **Multi-University Support** — Configure per organization, no code changes
-- ✅ **Built for Higher Education** — Works with Teams, SharePoint, Gmail, ChatGPT
-- ✅ **Open Source & Extensible** — MIT license, community-driven
+The following are roadmap items, not current claims:
 
-## Quick Start
+- execution adapters for Azure OpenAI, OpenAI Agents SDK, MCP or LangGraph
+- durable multi-node approval storage
+- authentication and enterprise identity integration
+- signed audit checkpoints or external transparency logs
+- policy simulation UI and production performance evidence
 
-### Installation (5 minutes)
+See [ROADMAP.md](ROADMAP.md) and [the architecture notes](docs/ARCHITECTURE.md).
+
+## Quick start
 
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/pais-governance.git
-cd pais-governance
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
+git clone https://github.com/richardogundele/PAIS-GOVERNANCE.git
+cd PAIS-GOVERNANCE
+python -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+uvicorn pais_governance.server:app --reload
 ```
 
-### Configuration (10 minutes)
+Request a decision:
 
-Create `pais_config.yaml`:
+```bash
+curl -s http://127.0.0.1:8000/api/v1/decisions \
+  -H 'content-type: application/json' \
+  -d '{
+    "agent_id": "operations-agent",
+    "tool": "shell",
+    "operation": "delete",
+    "environment": "production",
+    "has_side_effect": true,
+    "risk_score": 90
+  }'
+```
+
+Response:
+
+```json
+{
+  "action": "BLOCK_ACTION",
+  "rule": "block-destructive-shell",
+  "reason": "Destructive shell operations are denied by policy"
+}
+```
+
+Decision IDs and timestamps are omitted from this abbreviated example.
+
+## Use as a Python library
+
+```python
+from pais_governance import PolicyGateway
+
+gateway = PolicyGateway.from_config_file("pais_config.yaml")
+decision = gateway.enforce_policy({
+    "agent_id": "support-agent",
+    "tool": "customer-records",
+    "operation": "read",
+    "environment": "staging",
+    "data_classification": "internal",
+})
+
+if decision["action"] == "ALLOW":
+    # The host application, not PAIS, may now invoke the tool.
+    pass
+```
+
+## Policy example
 
 ```yaml
-organization:
-  name: "University of Manchester"
-  sector: "higher_education"
-
-sensitive_data:
-  columns:
-    - "Student ID"
-    - "Grade"
-    - "Feedback"
-    - "Email"
-    - "Name"
-    - "DOB"
-  patterns:
-    email: true
-    phone: true
-    ssn: true
-
-redaction:
-  strategy: "blank"  # or "token", "hash"
-  preserve_structure: false
+policy:
+  default_action: "REQUIRE_HUMAN_REVIEW"
 
 policies:
-  - name: "student_grades_protection"
-    trigger: "file_shared_externally"
-    action: "warn_and_redact"
-    sensitive_columns: ["Grade", "Feedback"]
-    
-  - name: "dpo_escalation"
-    trigger: "high_risk_data_detected"
-    action: "require_approval"
-    approval_team: "data-protection@manchester.ac.uk"
+  - name: "review-production-side-effects"
+    trigger: "agent_tool_call"
+    action: "REQUIRE_HUMAN_REVIEW"
+    reason: "Production side effects require explicit human approval"
+    approval_required_from: ["service-owner"]
+    condition:
+      environment: "production"
+      has_side_effect: true
 
-notification:
-  email: "data-protection@manchester.ac.uk"
-  teams_webhook: "https://outlook.webhook.office.com/..."
+  - name: "block-destructive-shell"
+    trigger: "agent_tool_call"
+    action: "BLOCK_ACTION"
+    priority: 1000
+    reason: "Destructive shell operations are denied by policy"
+    condition:
+      tool: "shell"
+      operation:
+        in: ["delete", "reset", "destroy"]
 ```
 
-### Deploy Locally (30 minutes)
+When multiple rules match, PAIS chooses the safest outcome. Within the same outcome, the higher numeric priority wins.
+
+## Run the checks
 
 ```bash
-# Using Docker
-docker-compose up -d
-
-# Or run directly
-python -m pais_governance.server
+pip install -e '.[dev]'
+ruff check src tests
+pytest --cov=pais_governance --cov-report=term-missing
+docker build -t pais-agent-gateway:local .
 ```
 
-Visit `http://localhost:8000` to test.
+The repository includes a reproducible local benchmark harness in [`scripts/benchmark.py`](scripts/benchmark.py). No performance claim is published until results are independently reproducible.
 
-## Usage Examples
+## Security model
 
-### Example 1: Spreadsheet Redaction
+PAIS is a decision point, not an execution sandbox. It reduces ambiguity at the tool boundary but cannot prevent a host application from ignoring a decision. The JSONL chain is tamper-evident, not tamper-proof: production deployments should checkpoint the head hash to independently controlled storage.
 
-```python
-from pais_governance.core.redactor import SpreadsheetRedactor
-from pais_governance.core.policy import PolicyEngine
-
-# Initialize
-config = PolicyEngine.load_config("pais_config.yaml")
-redactor = SpreadsheetRedactor(config)
-
-# Process file
-result = redactor.process_file(
-    file_path="grades.xlsx",
-    share_type="external",  # Shared with external user
-)
-
-# Result
-{
-    "status": "REDACTED",
-    "action": "WARN_AND_REDACT",
-    "sensitive_columns": ["Grade", "Student ID", "Feedback"],
-    "cells_redacted": 450,
-    "redacted_file": "grades_REDACTED.xlsx",
-    "message": "Sensitive data detected. Redacted version created."
-}
-```
-
-### Example 2: AI Tool Integration
-
-```python
-from pais_governance.core.gateway import PolicyGateway
-
-gateway = PolicyGateway(config)
-
-# User wants to upload to ChatGPT
-request = {
-    "user": "researcher@manchester.ac.uk",
-    "action": "upload_to_ai",
-    "file": "survey_data.csv",
-    "destination": "chatgpt",
-    "data": {...}  # File contents
-}
-
-# PAIS decides
-decision = gateway.enforce_policy(request)
-
-if decision["action"] == "BLOCK":
-    print(f"Upload blocked: {decision['reason']}")
-    # Notify user why this is blocked
-    
-elif decision["action"] == "ALLOW_WITH_REDACTION":
-    print(f"Uploading redacted version...")
-    upload_redacted_data(decision["safe_data"])
-```
-
-### Example 3: Custom Policy
-
-```python
-from pais_governance.core.policy import PolicyRule
-
-# Define custom rule
-rule = PolicyRule(
-    name="protect_research_data",
-    trigger="data_contains_subject_identifiers",
-    condition={
-        "data_type": "research",
-        "contains": ["name", "email", "institution"]
-    },
-    action="require_approval",
-    approval_required_from=["data-protection@manchester.ac.uk"],
-    escalation_timeout_hours=24
-)
-
-# Use in policy engine
-engine.add_rule(rule)
-```
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Data Sources                         │
-│  Teams │ SharePoint │ Gmail │ ChatGPT │ OneDrive │ File │
-└───────────────────┬─────────────────────────────────────┘
-                    │
-                    ↓
-        ┌───────────────────────────┐
-        │  PAIS-Governance Gateway  │
-        ├───────────────────────────┤
-        │ ├─ Request Interceptor    │
-        │ ├─ PII Detector (NER)     │
-        │ ├─ Policy Engine          │
-        │ ├─ Redaction Pipeline     │
-        │ └─ Audit Logger           │
-        └───────────┬───────────────┘
-                    │
-        ┌───────────┴──────────────┐
-        │                          │
-        ↓                          ↓
-    ┌────────────┐          ┌──────────────┐
-    │ Safe Data  │          │ Escalation   │
-    │(Processed) │          │(DPO Review)  │
-    └─────┬──────┘          └──────┬───────┘
-          │                        │
-          ↓                        ↓
-    ┌──────────────────────────────────────┐
-    │         Audit Log & Compliance       │
-    │  (GDPR, FERPA, UK AI Playbook)      │
-    └──────────────────────────────────────┘
-```
-
-## Components
-
-### Core Engine
-
-- **`pais_core/redactor.py`** — PII detection & redaction logic
-- **`pais_core/policy_engine.py`** — Policy rules & decision trees
-- **`pais_core/audit_log.py`** — Immutable event logging
-- **`pais_core/encryption.py`** — Data protection & key management
-
-### Integrations
-
-- **`integrations/teams_webhook.py`** — Teams Graph API listener
-- **`integrations/sharepoint.py`** — SharePoint adapter
-- **`integrations/gmail.py`** — Gmail integration
-- **`integrations/ai_tools.py`** — ChatGPT, Claude, Copilot support
-
-### API & Deployment
-
-- **`server.py`** — FastAPI server for requests
-- **`models.py`** — Data models & schemas
-- **`config.py`** — Configuration management
-
-## Deployment
-
-### Docker (Recommended)
-
-```bash
-docker-compose up -d
-# Access at http://localhost:8000
-```
-
-### Azure Functions
-
-```bash
-func azure functionapp publish pais-governance-prod
-```
-
-### Kubernetes
-
-```bash
-kubectl apply -f deployment/k8s/deployment.yaml
-```
-
-See [deployment/](deployment/) for detailed guides.
-
-## Governance & Compliance
-
-- **GDPR** — Right to erasure, data minimization, audit trails
-- **FERPA** — Student record protection
-- **HIPAA** — Health information safeguards (when applicable)
-- **UK AI Playbook** — Governance principles for public sector AI
-
-See [docs/GOVERNANCE.md](docs/GOVERNANCE.md) for compliance details.
+Please read [SECURITY.md](SECURITY.md) before deployment or reporting a vulnerability.
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
-- Code of conduct
-- How to report bugs
-- How to submit pull requests
-- Development setup
+PAIS is in alpha and welcomes focused contributions in policy evaluation, approval durability, signed audit checkpoints and framework adapters. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and an issue describing the behaviour you want to change.
 
-## Security
+## Maintainer
 
-**Report security vulnerabilities privately** to: `security@pais-governance.dev`
+PAIS was created and is maintained by [Richard Ogundele](https://github.com/richardogundele), an Enterprise AI Solution Architect working on scalable AI platforms, agentic systems and production reliability.
 
-See [SECURITY.md](SECURITY.md) for details.
+## Licence
 
-## Community
-
-- **GitHub Discussions** — Ask questions, share ideas
-- **Issues** — Report bugs, request features
-- **Wiki** — Community-contributed guides
-- **Slack** — Join our community (link in docs)
-
-## Roadmap
-
-### Current (v1.0)
-- [x] Spreadsheet redaction (Excel, CSV)
-- [x] Teams/SharePoint integration
-- [x] PII detection (names, IDs, emails, grades)
-- [x] Policy engine with rule support
-- [x] Audit logging
-
-### Next (v1.1)
-- [ ] PowerPoint redaction
-- [ ] Custom policy DSL (define rules without code)
-- [ ] Web UI for policy management
-- [ ] Multi-language support
-- [ ] Advanced NER models (spaCy v3+)
-
-### Future (v2.0)
-- [ ] Real-time monitoring dashboard
-- [ ] Machine learning-based anomaly detection
-- [ ] Integration with risk management systems
-- [ ] Blockchain-based audit trails (optional)
-- [ ] Federated learning for threat detection
-
-## FAQ
-
-**Q: Does PAIS-Governance slow down file sharing?**
-A: No. Redaction takes <2 seconds for typical files. Async processing available for large files.
-
-**Q: Can staff override redactions?**
-A: Yes, with DPO approval. Set `require_approval: true` in your policy.
-
-**Q: Is this GDPR compliant?**
-A: Yes. It implements data minimization, audit trails, and retention policies required by GDPR.
-
-**Q: Can we use this with our existing systems?**
-A: Yes. PAIS-Governance is designed to integrate with Teams, SharePoint, Gmail, and standard APIs.
-
-**Q: What if the redaction misses sensitive data?**
-A: The audit log captures what was (or wasn't) redacted. DPO can review and adjust policies.
-
-## License
-
-MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-**Built by God's Diamond (Richard Ogundele)**  
-**Maintained as open source for the global higher education and public sector community.**
-
-**Get started:** [docs/INSTALLATION.md](docs/INSTALLATION.md)  
-**Learn more:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)  
-**Questions?** [GitHub Discussions](https://github.com/yourusername/pais-governance/discussions)
+[MIT](LICENSE)

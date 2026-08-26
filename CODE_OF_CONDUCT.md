@@ -37,7 +37,7 @@ PAIS-Governance is committed to providing a welcoming, inclusive, and respectful
 If you experience or witness unacceptable behavior:
 
 1. **Document it** — Note what happened, when, who was involved, and context
-2. **Report to maintainers** — Email `conduct@pais-governance.dev`
+2. **Report to the maintainer** — Use the contact route on Richard Ogundele's GitHub profile and state that the report concerns the PAIS code of conduct.
 3. **Keep it private** — Do not publicly call out individuals
 
 Include:
@@ -75,7 +75,7 @@ This Code of Conduct is adapted from the [Contributor Covenant](https://www.cont
 
 ## Questions?
 
-If you have questions about this Code of Conduct, contact the maintainers at `conduct@pais-governance.dev`.
+If you have questions, contact the maintainer through the public GitHub profile.
 
 ---
 

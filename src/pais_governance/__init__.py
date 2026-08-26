@@ -1,23 +1,17 @@
-"""
-PAIS-Governance: Enterprise-grade policy-as-code AI governance
+"""PAIS: a policy-controlled reliability boundary for AI-agent actions."""
 
-Protect sensitive data in higher education and public sector organizations
-by enforcing policy-based redaction and access controls.
-"""
-
-__version__ = "1.0.0"
-__author__ = "God's Diamond (Richard Ogundele)"
-__email__ = "contact@pais-governance.dev"
+__version__ = "0.1.0"
+__author__ = "Richard Ogundele"
 __license__ = "MIT"
 
-from pais_governance.core.redactor import SpreadsheetRedactor
-from pais_governance.core.policy_engine import PolicyEngine
-from pais_governance.core.gateway import PolicyGateway
 from pais_governance.core.audit_log import AuditLogger
+from pais_governance.core.gateway import PolicyGateway
+from pais_governance.core.policy_engine import PolicyAction, PolicyEngine, PolicyRule
 
 __all__ = [
-    "SpreadsheetRedactor",
+    "AuditLogger",
+    "PolicyAction",
     "PolicyEngine",
     "PolicyGateway",
-    "AuditLogger",
+    "PolicyRule",
 ]

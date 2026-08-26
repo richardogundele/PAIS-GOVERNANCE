@@ -1,255 +1,108 @@
-"""
-PAIS-Governance FastAPI Server
+"""FastAPI boundary for the PAIS Agent Reliability Gateway."""
 
-REST API for PAIS policy enforcement.
-"""
+from __future__ import annotations
 
-import logging
 import os
-from typing import Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, File, UploadFile, Request
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import yaml
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
+
+import yaml
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, ConfigDict, Field
 
 from pais_governance.core.gateway import PolicyGateway
-from pais_governance.core.policy_engine import PolicyAction
 
-# Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
+gateway: PolicyGateway | None = None
 
-# FastAPI app
+
+def _build_gateway() -> PolicyGateway:
+    config_path = Path(os.getenv("PAIS_CONFIG", "pais_config.yaml"))
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+    return PolicyGateway(config or {})
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    global gateway
+    gateway = _build_gateway()
+    yield
+
+
 app = FastAPI(
-    title="PAIS-Governance API",
-    description="Enterprise-grade policy-as-code AI governance",
-    version="1.0.0",
+    title="PAIS Agent Reliability Gateway",
+    description="Policy decisions and tamper-evident audit records for AI-agent tool calls.",
+    version="0.1.0",
+    lifespan=lifespan,
 )
-
-# CORS
-_cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[
+        origin for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if origin
+    ],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["content-type", "authorization", "x-request-id"],
 )
 
-# Global gateway instance
-gateway: Optional[PolicyGateway] = None
 
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize on startup."""
-    global gateway
-
-    # Load configuration
-    config_path = Path("pais_config.yaml")
-    if not config_path.exists():
-        logger.warning(f"Config file not found: {config_path}")
-        config = {}
-    else:
-        with open(config_path) as f:
-            config = yaml.safe_load(f) or {}
-
-    # Initialize gateway
-    gateway = PolicyGateway(config)
-    logger.info("PAIS-Governance started")
-
-
-# Request/Response models
 class PolicyRequest(BaseModel):
-    """Policy enforcement request."""
+    model_config = ConfigDict(extra="forbid")
 
-    trigger: str
-    file: Optional[str] = None
-    user: Optional[str] = None
-    shared_by: Optional[str] = None
-    shared_with: Optional[str] = None
-    destination: Optional[str] = None
-    is_external: Optional[bool] = False
-
-
-class PolicyResponse(BaseModel):
-    """Policy enforcement response."""
-
-    action: str
-    decision: str
-    reason: str
-    timestamp: str
-
-
-# Routes
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "version": "1.0.0"}
-
-
-@app.post("/api/v1/enforce")
-async def enforce_policy(request: PolicyRequest) -> PolicyResponse:
-    """
-    Enforce policy on a request.
-
-    Args:
-        request: Policy request with trigger, file, user, etc.
-
-    Returns:
-        Policy decision
-    """
-    if not gateway:
-        raise HTTPException(status_code=503, detail="Service not initialized")
-
-    try:
-        decision = gateway.enforce_policy(request.dict(exclude_none=True))
-
-        return PolicyResponse(
-            action=decision.get("action", ""),
-            decision=decision.get("decision", ""),
-            reason=decision.get("reason", ""),
-            timestamp=decision.get("timestamp", ""),
-        )
-
-    except Exception as e:
-        logger.error(f"Error enforcing policy: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/v1/redact-file")
-async def redact_file(file: UploadFile = File(...)):
-    """
-    Upload file for redaction.
-
-    Args:
-        file: File to redact
-
-    Returns:
-        Redaction result
-    """
-    if not gateway:
-        raise HTTPException(status_code=503, detail="Service not initialized")
-
-    try:
-        # Save temp file
-        from tempfile import NamedTemporaryFile
-
-        with NamedTemporaryFile(
-            delete=False,
-            suffix=Path(file.filename or "").suffix,
-        ) as tmp:
-            contents = await file.read()
-            tmp.write(contents)
-            tmp.flush()
-
-            # Process
-            result = gateway.redactor.process_file(tmp.name)
-
-            return result
-
-    except Exception as e:
-        logger.error(f"Error redacting file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/v1/file-share")
-async def handle_file_share(
-    file_path: str, shared_by: str, shared_with: str, is_external: bool = True
-) -> Dict[str, Any]:
-    """Handle file sharing with policy enforcement."""
-    if not gateway:
-        raise HTTPException(status_code=503, detail="Service not initialized")
-
-    try:
-        result = gateway.handle_file_share(
-            file_path=file_path,
-            shared_by=shared_by,
-            shared_with=shared_with,
-            is_external=is_external,
-        )
-        return result
-
-    except Exception as e:
-        logger.error(f"Error handling file share: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/v1/audit")
-async def get_audit_log(
-    event_type: Optional[str] = None,
-    user: Optional[str] = None,
-    limit: int = 100,
-) -> Dict[str, Any]:
-    """Get audit log entries."""
-    if not gateway:
-        raise HTTPException(status_code=503, detail="Service not initialized")
-
-    try:
-        events = gateway.audit_logger.get_events(
-            event_type=event_type, user=user, limit=limit
-        )
-
-        return {"count": len(events), "events": events}
-
-    except Exception as e:
-        logger.error(f"Error retrieving audit log: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/v1/audit/summary")
-async def get_audit_summary() -> Dict[str, Any]:
-    """Get audit summary statistics."""
-    if not gateway:
-        raise HTTPException(status_code=503, detail="Service not initialized")
-
-    try:
-        summary = gateway.audit_logger.get_summary()
-        return summary
-
-    except Exception as e:
-        logger.error(f"Error getting audit summary: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/v1/config")
-async def get_config() -> Dict[str, Any]:
-    """Get current configuration (sanitized)."""
-    if not gateway:
-        raise HTTPException(status_code=503, detail="Service not initialized")
-
-    try:
-        # Return config without sensitive data
-        config = gateway.config.copy()
-
-        # Remove secrets
-        if "security" in config:
-            if "encryption_key" in config["security"]:
-                config["security"]["encryption_key"] = "***REDACTED***"
-
-        return config
-
-    except Exception as e:
-        logger.error(f"Error getting config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Handle unhandled exceptions."""
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"},
+    trigger: str = "agent_tool_call"
+    agent_id: str = Field(min_length=1, max_length=200)
+    user: str | None = Field(default=None, max_length=320)
+    tool: str = Field(min_length=1, max_length=200)
+    operation: str = Field(min_length=1, max_length=100)
+    environment: str = Field(default="development", pattern="^(development|staging|production)$")
+    has_side_effect: bool | None = None
+    resource: str | None = Field(default=None, max_length=500)
+    destination: str | None = Field(default=None, max_length=500)
+    data_classification: str = Field(
+        default="internal", pattern="^(public|internal|confidential|restricted)$"
     )
+    risk_score: int = Field(default=0, ge=0, le=100)
+    data: dict[str, Any] | None = None
 
 
-if __name__ == "__main__":
-    import uvicorn
+def _gateway() -> PolicyGateway:
+    if gateway is None:
+        raise HTTPException(status_code=503, detail="Gateway is not initialised")
+    return gateway
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")  # nosec B104
+
+@app.get("/health")
+async def health() -> dict[str, Any]:
+    service = _gateway()
+    return {
+        "status": "healthy",
+        "version": "0.1.0",
+        "audit_integrity": service.audit_logger.verify_integrity()["valid"],
+    }
+
+
+@app.post("/api/v1/decisions")
+async def decide(request: PolicyRequest) -> dict[str, Any]:
+    return _gateway().enforce_policy(request.model_dump(exclude_none=True))
+
+
+@app.get("/api/v1/audit/integrity")
+async def audit_integrity() -> dict[str, Any]:
+    return _gateway().audit_logger.verify_integrity()
+
+
+@app.get("/api/v1/audit/events")
+async def audit_events(event_type: str | None = None, limit: int = 100) -> dict[str, Any]:
+    if not 1 <= limit <= 1000:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 1000")
+    events = _gateway().audit_logger.get_events(event_type=event_type, limit=limit)
+    return {"count": len(events), "events": events}
+
+
+@app.get("/api/v1/reviews/{decision_id}")
+async def review_status(decision_id: str) -> dict[str, Any]:
+    review = _gateway().pending_reviews.get(decision_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return {"decision_id": decision_id, **review}

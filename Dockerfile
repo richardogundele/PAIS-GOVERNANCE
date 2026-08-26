@@ -1,35 +1,17 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
 WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
-    python -m spacy download en_core_web_sm
-
-# Copy application code
-COPY src/ /app/src/
-COPY setup.py .
-COPY pais_config.yaml .
-
-# Install application
-RUN pip install -e .
-
-# Create non-root user
-RUN useradd -m -u 1000 pais && chown -R pais:pais /app
+RUN useradd --create-home --uid 10001 pais
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+RUN pip install --no-cache-dir .
+COPY pais_config.yaml ./pais_config.yaml
+RUN mkdir -p /app/logs && chown -R pais:pais /app
 USER pais
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Run server
-CMD ["python", "-m", "pais_governance.server"]
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+CMD ["uvicorn", "pais_governance.server:app", "--host", "0.0.0.0", "--port", "8000"]

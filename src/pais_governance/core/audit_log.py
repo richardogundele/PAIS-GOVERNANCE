@@ -1,315 +1,142 @@
-"""
-PAIS Audit Logger
+"""Append-only, tamper-evident audit records for PAIS decisions."""
 
-Immutable audit trails for all policy decisions and data redactions.
-Essential for compliance (GDPR, FERPA, etc.).
-"""
+from __future__ import annotations
 
-import json
-import logging
-from typing import Dict, Any, Optional, List
-from datetime import datetime
-from pathlib import Path
 import hashlib
+import json
+import os
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
 
-logger = logging.getLogger(__name__)
+GENESIS_HASH = "0" * 64
 
 
+def _canonical(data: dict[str, Any]) -> bytes:
+    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+@dataclass
 class AuditEvent:
-    """Single audit event."""
+    event_type: str
+    actor: str | None = None
+    action: str | None = None
+    resource: str | None = None
+    decision: str | None = None
+    reason: str | None = None
+    request_fingerprint: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    event_id: str = field(default_factory=lambda: str(uuid4()))
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    previous_hash: str = GENESIS_HASH
+    event_hash: str = ""
 
-    def __init__(
-        self,
-        event_type: str,
-        user: Optional[str] = None,
-        action: Optional[str] = None,
-        resource: Optional[str] = None,
-        decision: Optional[str] = None,
-        reason: Optional[str] = None,
-        sensitive_data_detected: Optional[List[str]] = None,
-        cells_redacted: int = 0,
-    ):
-        """Initialize audit event."""
-        self.timestamp = datetime.utcnow().isoformat()
-        self.event_type = event_type
-        self.user = user
-        self.action = action
-        self.resource = resource
-        self.decision = decision
-        self.reason = reason
-        self.sensitive_data_detected = sensitive_data_detected or []
-        self.cells_redacted = cells_redacted
-        self.event_id = self._generate_id()
+    def payload(self) -> dict[str, Any]:
+        data = asdict(self)
+        data.pop("event_hash", None)
+        return data
 
-    def _generate_id(self) -> str:
-        """Generate deterministic event ID."""
-        content = f"{self.timestamp}{self.event_type}{self.resource}".encode()
-        return hashlib.sha256(content).hexdigest()[:16]
+    def seal(self) -> None:
+        self.event_hash = hashlib.sha256(_canonical(self.payload())).hexdigest()
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Export to dict."""
-        return {
-            "event_id": self.event_id,
-            "timestamp": self.timestamp,
-            "event_type": self.event_type,
-            "user": self.user,
-            "action": self.action,
-            "resource": self.resource,
-            "decision": self.decision,
-            "reason": self.reason,
-            "sensitive_data_detected": self.sensitive_data_detected,
-            "cells_redacted": self.cells_redacted,
-        }
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 class AuditLogger:
-    """
-    Log audit events for compliance.
+    """Persist JSONL events linked by hashes so tampering can be detected."""
 
-    Maintains immutable record of:
-    - Policy decisions
-    - Data redactions
-    - Human escalations
-    - Blocked actions
-    """
+    def __init__(self, log_file: str | None = None) -> None:
+        self.log_file = Path(log_file or "audit.log")
+        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        self.log_file.touch(exist_ok=True)
+        self.events: list[AuditEvent] = []
+        self._load()
 
-    def __init__(self, log_file: Optional[str] = None):
-        """
-        Initialize audit logger.
+    def _load(self) -> None:
+        for line in self.log_file.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                self.events.append(AuditEvent(**json.loads(line)))
 
-        Args:
-            log_file: Path to audit log file (JSONL format)
-        """
-        self.log_file = log_file or "audit.log"
-        self.events: List[AuditEvent] = []
-        self._ensure_log_file()
+    @staticmethod
+    def fingerprint(request: dict[str, Any]) -> str:
+        return hashlib.sha256(_canonical(request)).hexdigest()
 
-    def _ensure_log_file(self) -> None:
-        """Ensure log file exists."""
-        Path(self.log_file).parent.mkdir(parents=True, exist_ok=True)
-        Path(self.log_file).touch(exist_ok=True)
+    def append(self, event: AuditEvent) -> AuditEvent:
+        event.previous_hash = self.events[-1].event_hash if self.events else GENESIS_HASH
+        event.seal()
+        with self.log_file.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event.to_dict(), sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        self.events.append(event)
+        return event
 
-    def _append_event(self, event: AuditEvent) -> None:
-        """Append event to log (immutable)."""
-        try:
-            with open(self.log_file, "a") as f:
-                f.write(json.dumps(event.to_dict()) + "\n")
-            self.events.append(event)
-            logger.debug(f"Logged event: {event.event_id}")
-        except Exception as e:
-            logger.error(f"Failed to write audit log: {e}")
-
-    def log_allowed(self, request: Dict[str, Any], decision) -> None:
-        """Log allowed action."""
-        event = AuditEvent(
-            event_type="ALLOWED",
-            user=request.get("user") or request.get("shared_by"),
-            action=request.get("trigger"),
-            resource=request.get("file") or request.get("resource"),
-            decision=decision.rule_name,
-            reason=decision.reason,
+    def log_decision(self, request: dict[str, Any], decision: Any) -> AuditEvent:
+        return self.append(
+            AuditEvent(
+                event_type=decision.action.value,
+                actor=request.get("user") or request.get("agent_id"),
+                action=request.get("operation") or request.get("trigger"),
+                resource=request.get("resource") or request.get("tool") or request.get("file"),
+                decision=decision.rule_name,
+                reason=decision.reason,
+                request_fingerprint=self.fingerprint(request),
+                metadata={"decision_id": decision.decision_id},
+            )
         )
-        self._append_event(event)
+
+    def log_allowed(self, request: dict[str, Any], decision: Any) -> AuditEvent:
+        return self.log_decision(request, decision)
 
     def log_redaction(
-        self, request: Dict[str, Any], decision, redacted_data: Any
-    ) -> None:
-        """Log data redaction."""
-        event = AuditEvent(
-            event_type="REDACTED",
-            user=request.get("user") or request.get("shared_by"),
-            action=request.get("trigger"),
-            resource=request.get("file") or request.get("resource"),
-            decision=decision.rule_name,
-            reason=decision.reason,
-            sensitive_data_detected=decision.sensitive_columns,
-            cells_redacted=self._count_redactions(redacted_data),
-        )
-        self._append_event(event)
+        self, request: dict[str, Any], decision: Any, redacted_data: Any
+    ) -> AuditEvent:
+        return self.log_decision(request, decision)
 
-    def log_escalation(self, request: Dict[str, Any], decision) -> None:
-        """Log escalation for human review."""
-        event = AuditEvent(
-            event_type="ESCALATED",
-            user=request.get("user") or request.get("shared_by"),
-            action=request.get("trigger"),
-            resource=request.get("file") or request.get("resource"),
-            decision=decision.rule_name,
-            reason=(
-                "Requires approval from: "
-                f"{', '.join(decision.approval_required_from or [])}"
-            ),
-            sensitive_data_detected=decision.sensitive_columns,
-        )
-        self._append_event(event)
+    def log_escalation(self, request: dict[str, Any], decision: Any) -> AuditEvent:
+        return self.log_decision(request, decision)
 
-    def log_blocked(self, request: Dict[str, Any], decision) -> None:
-        """Log blocked action."""
-        event = AuditEvent(
-            event_type="BLOCKED",
-            user=request.get("user") or request.get("shared_by"),
-            action=request.get("trigger"),
-            resource=request.get("file") or request.get("resource"),
-            decision=decision.rule_name,
-            reason=decision.reason,
-            sensitive_data_detected=decision.sensitive_columns,
-        )
-        self._append_event(event)
+    def log_blocked(self, request: dict[str, Any], decision: Any) -> AuditEvent:
+        return self.log_decision(request, decision)
 
-    def log_decision(self, request: Dict[str, Any], decision) -> None:
-        """Log policy decision."""
-        event = AuditEvent(
-            event_type="DECISION",
-            user=request.get("user") or request.get("shared_by"),
-            action=request.get("trigger"),
-            resource=request.get("file") or request.get("resource"),
-            decision=decision.rule_name,
-            reason=decision.reason,
-        )
-        self._append_event(event)
-
-    def log_approval(
-        self, user: str, resource: str, approved_by: str, reason: Optional[str] = None
-    ) -> None:
-        """Log approval of previously escalated request."""
-        event = AuditEvent(
-            event_type="APPROVED",
-            user=user,
-            action="approval",
-            resource=resource,
-            decision="APPROVED",
-            reason=f"Approved by {approved_by}: {reason}",
-        )
-        self._append_event(event)
-
-    def log_denial(
-        self, user: str, resource: str, denied_by: str, reason: Optional[str] = None
-    ) -> None:
-        """Log denial of previously escalated request."""
-        event = AuditEvent(
-            event_type="DENIED",
-            user=user,
-            action="approval",
-            resource=resource,
-            decision="DENIED",
-            reason=f"Denied by {denied_by}: {reason}",
-        )
-        self._append_event(event)
+    def verify_integrity(self) -> dict[str, Any]:
+        previous = GENESIS_HASH
+        for index, event in enumerate(self.events):
+            expected = hashlib.sha256(_canonical(event.payload())).hexdigest()
+            if event.previous_hash != previous or event.event_hash != expected:
+                return {"valid": False, "events_checked": index, "failed_event_id": event.event_id}
+            previous = event.event_hash
+        return {"valid": True, "events_checked": len(self.events), "head_hash": previous}
 
     def get_events(
         self,
-        event_type: Optional[str] = None,
-        user: Optional[str] = None,
-        resource: Optional[str] = None,
+        event_type: str | None = None,
+        user: str | None = None,
+        resource: str | None = None,
         limit: int = 100,
-    ) -> List[Dict[str, Any]]:
-        """
-        Query audit log.
-
-        Args:
-            event_type: Filter by event type
-            user: Filter by user
-            resource: Filter by resource
-            limit: Max events to return
-
-        Returns:
-            List of matching events
-        """
+    ) -> list[dict[str, Any]]:
         results = []
-
-        for event in reversed(self.events[-limit:]):
+        for event in reversed(self.events):
             if event_type and event.event_type != event_type:
                 continue
-            if user and event.user != user:
+            if user and event.actor != user:
                 continue
             if resource and event.resource != resource:
                 continue
-
             results.append(event.to_dict())
-
+            if len(results) >= limit:
+                break
         return results
 
-    def get_summary(self) -> Dict[str, Any]:
-        """Get summary statistics."""
-        summary: Dict[str, Any] = {
-            "total_events": len(self.events),
-            "by_type": {},
-            "by_decision": {},
-        }
-
+    def get_summary(self) -> dict[str, Any]:
+        by_type: dict[str, int] = {}
         for event in self.events:
-            # By type
-            event_type = event.event_type
-            summary["by_type"][event_type] = summary["by_type"].get(event_type, 0) + 1
-
-            # By decision
-            if event.decision:
-                decision = event.decision
-                summary["by_decision"][decision] = (
-                    summary["by_decision"].get(decision, 0) + 1
-                )
-
-        return summary
-
-    def _count_redactions(self, redacted_data: Any) -> int:
-        """Count number of redactions in data."""
-        if not redacted_data:
-            return 0
-
-        # If DataFrame
-        if hasattr(redacted_data, "values"):
-            import numpy as np
-
-            return np.sum(redacted_data == "[REDACTED]").sum()
-
-        # If dict
-        if isinstance(redacted_data, dict):
-            count = 0
-            for v in redacted_data.values():
-                if v == "[REDACTED]":
-                    count += 1
-            return count
-
-        return 0
-
-    def export_json(self, output_path: str) -> bool:
-        """Export audit log as JSON."""
-        try:
-            with open(output_path, "w") as f:
-                json.dump(
-                    [event.to_dict() for event in self.events],
-                    f,
-                    indent=2,
-                )
-            logger.info(f"Exported audit log to {output_path}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to export audit log: {e}")
-            return False
-
-
-def main():
-    """Example usage."""
-    logger_instance = AuditLogger()
-
-    # Log some events
-    logger_instance.log_allowed(
-        {"user": "staff@example.com", "file": "grades.xlsx"},
-        type(
-            "Decision",
-            (),
-            {"rule_name": "default", "reason": "No policy matched"},
-        )(),
-    )
-
-    # Query
-    events = logger_instance.get_events()
-    print(f"Total events: {len(events)}")
-
-    # Summary
-    summary = logger_instance.get_summary()
-    print(f"Summary: {summary}")
-
-
-if __name__ == "__main__":
-    main()
+            by_type[event.event_type] = by_type.get(event.event_type, 0) + 1
+        return {
+            "total_events": len(self.events),
+            "by_type": by_type,
+            "integrity": self.verify_integrity(),
+        }

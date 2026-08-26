@@ -1,17 +1,14 @@
-"""PAIS Core modules."""
+"""Core PAIS decision and audit modules."""
 
-from .redactor import SpreadsheetRedactor, PIIDetector
-from .policy_engine import PolicyEngine, PolicyAction, PolicyRule
+from .audit_log import AuditEvent, AuditLogger
 from .gateway import PolicyGateway
-from .audit_log import AuditLogger, AuditEvent
+from .policy_engine import PolicyAction, PolicyEngine, PolicyRule
 
 __all__ = [
-    "SpreadsheetRedactor",
-    "PIIDetector",
-    "PolicyEngine",
-    "PolicyAction",
-    "PolicyRule",
-    "PolicyGateway",
-    "AuditLogger",
     "AuditEvent",
+    "AuditLogger",
+    "PolicyAction",
+    "PolicyEngine",
+    "PolicyGateway",
+    "PolicyRule",
 ]
